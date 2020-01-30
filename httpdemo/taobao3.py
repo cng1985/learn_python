@@ -1,9 +1,9 @@
 from __future__ import unicode_literals, print_function, absolute_import, division
 
 import urllib
-import urllib2
-import urlparse
-import cookielib
+import urllib.parse
+import urllib.request
+from http import cookiejar
 import re
 import sys
 import os
@@ -11,6 +11,7 @@ import json
 import subprocess
 import argparse
 import platform
+import ssl
 from getpass import getpass
 from datetime import datetime
 from pprint import pprint
@@ -18,6 +19,8 @@ try:
     from bs4 import BeautifulSoup
 except ImportError:
     sys.exit('BeautifulSoup4 missing.')
+
+ssl._create_default_https_context = ssl._create_unverified_context   
 __version__ = '1.0.0'
 __author__ = 'JinnLynn'
 __copyright__ = 'Copyright (c) 2014 JinnLynn'
@@ -25,7 +28,6 @@ __license__ = 'The MIT License'
 HEADERS = {
     'x-requestted-with': 'XMLHttpRequest',
     'Accept-Language': 'zh-cn',
-    'Accept-Encoding': 'gzip, deflate',
     'ContentType': 'application/x-www-form-urlencoded; chartset=UTF-8',
     'Cache-Control': 'no-cache',
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.38 Safari/537.36',
@@ -49,15 +51,19 @@ RAW_IMPUT_ENCODING = 'gbk' if platform.system() == 'Windows'else 'utf-8'
 
 def _request(url, data, method='POST'):
     if data:
-        data = urllib.urlencode(data)
+        data =urllib.parse.urlencode(data).encode("utf-8")
     if method == 'GET':
         if data:
             url = '{}?{}'.format(url, data)
         data = None
     # print(url)
     # print(data)
-    req = urllib2.Request(url, data, HEADERS)
-    return urllib2.urlopen(req)
+    request = urllib.request.Request(url,data=data,headers=HEADERS)
+    cookie = cookiejar.CookieJar()
+    cookie_handler = urllib.request.HTTPCookieProcessor(cookie)
+    opener = urllib.request.build_opener(cookie_handler)
+    #req = urllib2.Request(url, data, HEADERS)
+    return opener.open(request)
 
 
 def stdout_cr(msg=''):
@@ -78,7 +84,8 @@ def login_post(data):
     login_data = DEFAULT_POST_DATA
     login_data.update(data)
     res = post(LOGIN_URL, login_data)
-    return json.load(res, encoding='gbk')
+    #print(res.read())
+    return json.load(res)
 
 
 def login(usr, pwd):
@@ -188,7 +195,7 @@ def parse_bought_list(start_date=None, end_date=None):
                 for n in node:
                     try:
                         bb = {}
-                        if [True for ex in extra_service if ex inn.attrs['class']]:
+                        if True:
                             # 额外服务处理
                             # print('额外服务处理')
                             name_node = n.find('td', class_='baobei')
@@ -290,11 +297,6 @@ def output(orders, start_date, end_date):
     print('{:<7} {}'.format('宝贝原始总价:', org_amount))
     print('{:<7} {:.2f}'.format('宝贝平均单价:', 0 if baobei_count ==
                                 0 else org_amount / baobei_count))
-    print('{:<9} {} ({:.2%})'.format('节约了(?)：',
-                                     org_amount - amount,
-                                     if org_amount == 0 else (org_amount - amount) / org_amount))
-    from_date = start_date if start_date else orders[-1]['date']
-    to_date = end_date if end_date else datetime.now()
     print('{:<9} {:%Y-%m-%d} - {:%Y-%m-%d}'.format('统计区间:', from_date, to_date))
     if not start_date:
         print('{:<9} {:%Y-%m-%d %H:%M}'.format('败家始于:', orders[-1]['date']))
@@ -333,16 +335,14 @@ def main():
     args = parser.parse_args()
     usr = args.username
     if not usr:
-        usr = raw_input('输入淘宝用户名: '.encode(RAW_IMPUT_ENCODING))
-    usr = usr.decode('utf-8')  # 中文输入问题
+        usr = input('输入淘宝用户名: ')
     pwd = args.password
     if not pwd:
         if platform.system() == 'Windows':
             # Windows下中文输出有问题
             pwd = getpass()
         else:
-            pwd = getpass('输入淘宝密码: '.encode('utf-8'))
-    pwd = pwd.decode('utf-8')
+            pwd = getpass('输入淘宝密码: ')
     verbose = args.verbose
     start_date = None
     if args.start:
@@ -359,14 +359,16 @@ def main():
     if start_date and end_date and start_date > end_date:
         sys.exit('ERROR, 结束日期必须晚于或等于开始日期')
     cj_file = './{}.tmp'.format(usr)
-    cj = cookielib.LWPCookieJar()
+    cj = cookiejar.CookieJar()
     try:
         cj.load(cj_file)
     except:
         pass
-    opener = urllib2.build_opener(
-        urllib2.HTTPCookieProcessor(cj), urllib2.HTTPHandler)
-    urllib2.install_opener(opener)
+
+    handler = urllib.request.HTTPCookieProcessor(cj)
+    opener = urllib.request.build_opener(handler)
+    url = 'http://www.baidu.com/'
+    esp = opener.open(url)
     login(usr, pwd)
     try:
         cj.save(cj_file)
