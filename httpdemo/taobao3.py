@@ -85,7 +85,8 @@ def login_post(data):
     login_data.update(data)
     res = post(LOGIN_URL, login_data)
     #print(res.read())
-    return json.load(res)
+    
+    return json.load(res,encoding='gbk')
 
 
 def login(usr, pwd):
